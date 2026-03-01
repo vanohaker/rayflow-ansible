@@ -1,0 +1,145 @@
+---
+# Deprovision a VPN server — remove all software installed by provision-server.yml.
+# Leaves SSH access (hardened config + authorized_keys) intact.
+#
+# Variables (passed from Semaphore environment):
+#   xui_port, node_exporter_port, xui_exporter_port
+#
+# Usage:
+#   ansible-playbook -i inventory deprovision-server.yml
+
+- name: Deprovision VPN server
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    xui_port: "2053"
+    node_exporter_port: "9100"
+    xui_exporter_port: "9090"
+
+  tasks:
+    # ── 1. Stop and remove 3x-ui ──────────────────────────────────────
+    - name: Stop and disable x-ui service
+      ansible.builtin.systemd:
+        name: x-ui
+        state: stopped
+        enabled: false
+      ignore_errors: true
+
+    - name: Remove x-ui systemd unit
+      ansible.builtin.file:
+        path: /etc/systemd/system/x-ui.service
+        state: absent
+
+    - name: Remove x-ui installation directory
+      ansible.builtin.file:
+        path: /usr/local/x-ui
+        state: absent
+
+    - name: Remove x-ui config directory
+      ansible.builtin.file:
+        path: /etc/x-ui
+        state: absent
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    # ── 2. Stop and remove Docker exporters ───────────────────────────
+    - name: Check if rayflow-exporters directory exists
+      ansible.builtin.stat:
+        path: /opt/rayflow-exporters/docker-compose.yml
+      register: exporters_compose
+
+    - name: Stop exporters via docker compose
+      ansible.builtin.command:
+        cmd: docker compose down --volumes --remove-orphans
+        chdir: /opt/rayflow-exporters
+      when: exporters_compose.stat.exists
+      ignore_errors: true
+
+    - name: Remove rayflow-exporters directory
+      ansible.builtin.file:
+        path: /opt/rayflow-exporters
+        state: absent
+
+    # ── 3. Remove Docker Engine ───────────────────────────────────────
+    - name: Stop Docker service
+      ansible.builtin.systemd:
+        name: docker
+        state: stopped
+        enabled: false
+      ignore_errors: true
+
+    - name: Remove Docker packages
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: absent
+        purge: true
+      ignore_errors: true
+
+    - name: Remove Docker data directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/docker
+        - /var/lib/containerd
+        - /etc/docker
+
+    - name: Remove Docker apt repository
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/docker.list
+        state: absent
+
+    - name: Remove Docker GPG key
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/docker.asc
+        state: absent
+
+    # ── 4. Remove custom fail2ban config ──────────────────────────────
+    - name: Remove custom fail2ban jail config
+      ansible.builtin.file:
+        path: /etc/fail2ban/jail.local
+        state: absent
+      ignore_errors: true
+
+    - name: Restart fail2ban to apply default config
+      ansible.builtin.systemd:
+        name: fail2ban
+        state: restarted
+      ignore_errors: true
+
+    # ── 5. Remove UFW rules for our ports ─────────────────────────────
+    - name: Remove UFW rules for provisioned ports
+      ansible.builtin.command:
+        cmd: "ufw delete allow {{ item }}/tcp"
+      loop:
+        - "{{ xui_port }}"
+        - "443"
+        - "{{ node_exporter_port }}"
+        - "{{ xui_exporter_port }}"
+      ignore_errors: true
+
+    # ── 6. Remove unattended-upgrades ─────────────────────────────────
+    - name: Remove unattended-upgrades
+      ansible.builtin.apt:
+        name: unattended-upgrades
+        state: absent
+        purge: true
+      ignore_errors: true
+
+    # ── 7. Cleanup apt ────────────────────────────────────────────────
+    - name: Autoremove unused packages
+      ansible.builtin.apt:
+        autoremove: true
+
+    - name: Clean apt cache
+      ansible.builtin.apt:
+        autoclean: true
