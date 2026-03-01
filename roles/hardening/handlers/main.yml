@@ -1,0 +1,10 @@
+---
+- name: Restart sshd
+  systemd:
+    name: "{{ 'sshd' if ansible_os_family == 'RedHat' else 'ssh' }}"
+    state: restarted
+
+- name: Restart fail2ban
+  systemd:
+    name: fail2ban
+    state: restarted

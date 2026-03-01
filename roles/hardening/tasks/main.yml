@@ -1,0 +1,92 @@
+---
+- name: Harden sshd_config
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd
+
+# --- UFW ---
+- name: Install ufw
+  apt:
+    name: ufw
+    state: present
+
+- name: Set UFW default deny incoming
+  ufw:
+    direction: incoming
+    policy: deny
+
+- name: Set UFW default allow outgoing
+  ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Allow SSH
+  ufw:
+    rule: allow
+    port: "{{ ansible_port | default(22) }}"
+    proto: tcp
+
+- name: Allow XUI panel port
+  ufw:
+    rule: allow
+    port: "{{ xui_port | default(2053) }}"
+    proto: tcp
+
+- name: Allow inbound port (VLESS)
+  ufw:
+    rule: allow
+    port: "{{ inbound_port | default(443) }}"
+    proto: tcp
+
+- name: Allow node_exporter port
+  ufw:
+    rule: allow
+    port: "{{ node_exporter_port | default(9100) }}"
+    proto: tcp
+
+- name: Allow xui_exporter port
+  ufw:
+    rule: allow
+    port: "{{ xui_exporter_port | default(9090) }}"
+    proto: tcp
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+
+# --- Fail2ban ---
+- name: Install fail2ban
+  apt:
+    name: fail2ban
+    state: present
+
+- name: Configure fail2ban jail
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart fail2ban
+
+- name: Ensure fail2ban is running
+  systemd:
+    name: fail2ban
+    state: started
+    enabled: true
+
+# --- Unattended upgrades ---
+- name: Install unattended-upgrades
+  apt:
+    name: unattended-upgrades
+    state: present
+
+- name: Enable unattended-upgrades
+  command: dpkg-reconfigure -f noninteractive unattended-upgrades
+  args:
+    creates: /etc/apt/apt.conf.d/20auto-upgrades

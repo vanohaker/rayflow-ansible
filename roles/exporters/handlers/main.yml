@@ -1,0 +1,5 @@
+---
+- name: Restart exporters
+  command: docker compose up -d --force-recreate
+  args:
+    chdir: /opt/rayflow-exporters

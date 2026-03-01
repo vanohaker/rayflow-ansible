@@ -1,0 +1,26 @@
+# Managed by Ansible — do not edit manually.
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    pid: host
+    network_mode: host
+    command:
+      - "--path.rootfs=/host"
+      - "--web.listen-address=:{{ node_exporter_port | default(9100) }}"
+    volumes:
+      - /:/host:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+
+  xui-exporter:
+    image: hteppl/x-ui-exporter
+    restart: unless-stopped
+    ports:
+      - "{{ xui_exporter_port | default(9090) }}:9090"
+    environment:
+      PANEL_BASE_URL: "http://127.0.0.1:{{ xui_port | default(2053) }}"
+      PANEL_USERNAME: "{{ xui_username }}"
+      PANEL_PASSWORD: "{{ xui_password }}"
+      INSECURE_SKIP_VERIFY: "true"
+      UPDATE_INTERVAL: "30"

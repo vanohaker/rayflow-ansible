@@ -1,0 +1,20 @@
+---
+# Provision a VPN server with 3x-ui, hardening, and monitoring exporters.
+#
+# Variables (passed from Semaphore environment):
+#   xui_port, xui_base_path, xui_username, xui_password
+#   node_exporter_port, xui_exporter_port, inbound_port
+#
+# Usage:
+#   ansible-playbook -i inventory provision-server.yml
+
+- name: Provision VPN server
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - common
+    - hardening
+    - xui
+    - exporters

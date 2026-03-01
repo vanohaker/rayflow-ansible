@@ -1,0 +1,5 @@
+---
+xui_port: 2053
+xui_install_dir: /usr/local/x-ui
+xui_binary: "{{ xui_install_dir }}/x-ui"
+xray_binary: "{{ xui_install_dir }}/bin/xray"

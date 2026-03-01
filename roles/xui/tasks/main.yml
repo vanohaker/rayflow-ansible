@@ -1,0 +1,124 @@
+---
+- name: Get latest 3x-ui release tag
+  uri:
+    url: https://api.github.com/repos/MHSanaei/3x-ui/releases/latest
+    return_content: true
+  register: xui_release
+
+- name: Set 3x-ui version fact
+  set_fact:
+    xui_version: "{{ xui_release.json.tag_name }}"
+
+- name: Determine architecture for 3x-ui
+  set_fact:
+    xui_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' if ansible_architecture == 'aarch64' else 'armv7' }}"
+
+- name: Download 3x-ui
+  get_url:
+    url: "https://github.com/MHSanaei/3x-ui/releases/download/{{ xui_version }}/x-ui-linux-{{ xui_arch }}.tar.gz"
+    dest: /tmp/x-ui.tar.gz
+    mode: "0644"
+  register: xui_download
+  changed_when: xui_download.changed
+
+- name: Extract 3x-ui
+  unarchive:
+    src: /tmp/x-ui.tar.gz
+    dest: /usr/local/
+    remote_src: true
+  when: xui_download.changed
+
+- name: Set 3x-ui binary permissions
+  file:
+    path: "{{ item }}"
+    mode: "0755"
+  loop:
+    - "{{ xui_binary }}"
+    - "{{ xui_install_dir }}/bin/"
+  ignore_errors: true
+
+# --- Xray-core ---
+- name: Get latest Xray-core release tag
+  uri:
+    url: https://api.github.com/repos/XTLS/Xray-core/releases/latest
+    return_content: true
+  register: xray_release
+
+- name: Set Xray version fact
+  set_fact:
+    xray_version: "{{ xray_release.json.tag_name }}"
+
+- name: Determine architecture for Xray
+  set_fact:
+    xray_arch: "{{ '64' if ansible_architecture == 'x86_64' else 'arm64-v8a' if ansible_architecture == 'aarch64' else 'arm32-v7a' }}"
+
+- name: Download Xray-core
+  get_url:
+    url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_version }}/Xray-linux-{{ xray_arch }}.zip"
+    dest: /tmp/xray.zip
+    mode: "0644"
+  register: xray_download
+
+- name: Create xray bin directory
+  file:
+    path: "{{ xui_install_dir }}/bin"
+    state: directory
+    mode: "0755"
+
+- name: Extract Xray-core
+  unarchive:
+    src: /tmp/xray.zip
+    dest: "{{ xui_install_dir }}/bin/"
+    remote_src: true
+  when: xray_download.changed
+
+- name: Set xray binary permissions
+  file:
+    path: "{{ xray_binary }}"
+    mode: "0755"
+
+# --- Systemd service ---
+- name: Create x-ui systemd service
+  template:
+    src: x-ui.service.j2
+    dest: /etc/systemd/system/x-ui.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart x-ui
+
+- name: Enable and start x-ui
+  systemd:
+    name: x-ui
+    daemon_reload: true
+    enabled: true
+    state: started
+
+# --- Configure credentials ---
+- name: Configure 3x-ui credentials
+  command: >
+    {{ xui_binary }} setting
+    -username {{ xui_username }}
+    -password {{ xui_password }}
+    -port {{ xui_port }}
+    -webBasePath {{ xui_base_path }}
+  notify: Restart x-ui
+
+- name: Flush handlers to apply restart
+  meta: flush_handlers
+
+- name: Wait for 3x-ui to be ready
+  wait_for:
+    port: "{{ xui_port }}"
+    host: 127.0.0.1
+    delay: 3
+    timeout: 30
+
+# --- Cleanup ---
+- name: Remove downloaded archives
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/x-ui.tar.gz
+    - /tmp/xray.zip

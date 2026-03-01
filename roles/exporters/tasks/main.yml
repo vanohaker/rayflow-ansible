@@ -1,0 +1,34 @@
+---
+- name: Create exporters directory
+  file:
+    path: /opt/rayflow-exporters
+    state: directory
+    mode: "0755"
+
+- name: Template docker-compose for exporters
+  template:
+    src: docker-compose.exporters.yml.j2
+    dest: /opt/rayflow-exporters/docker-compose.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart exporters
+
+- name: Start exporters
+  command: docker compose up -d
+  args:
+    chdir: /opt/rayflow-exporters
+
+- name: Wait for node_exporter
+  wait_for:
+    port: "{{ node_exporter_port | default(9100) }}"
+    host: 127.0.0.1
+    delay: 2
+    timeout: 30
+
+- name: Wait for xui_exporter
+  wait_for:
+    port: "{{ xui_exporter_port | default(9090) }}"
+    host: 127.0.0.1
+    delay: 2
+    timeout: 30
